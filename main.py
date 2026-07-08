@@ -24,9 +24,9 @@ app.add_middleware(
         "http://127.0.0.1:5500",
         "http://localhost:3000",
         "null",
-        # Vercel preview and production domains
         "https://lingoscribe-frontend.vercel.app",
         "https://lingoscribe-frontend-muhmdfarhan0.vercel.app",
+        "https://lingoscribe-frontend-datraxa.vercel.app",
     ],
     allow_origin_regex=r"https://lingoscribe.*\.vercel\.app",
     allow_methods=["GET", "POST"],
