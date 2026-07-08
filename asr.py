@@ -39,7 +39,12 @@ def transcribe(audio_path: str) -> dict:
             resp = client.post(
                 GROQ_AUDIO_URL,
                 headers={"Authorization": f"Bearer {GROQ_KEY}"},
-                data={"model": "whisper-large-v3", "response_format": "verbose_json"},
+                data={
+                    "model": "whisper-large-v3",
+                    "response_format": "verbose_json",
+                    # Guides Whisper to output Perso-Arabic script for Pakistani languages
+                    "prompt": "یہ اردو یا پاکستانی پنجابی زبان میں گفتگو ہے۔",
+                },
                 files={"file": (filename, audio_bytes)},
             )
             resp.raise_for_status()
