@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+scripts/output/
+converted_models/
+*.pt
+*.bin
+!tests/fixtures/sample.wav

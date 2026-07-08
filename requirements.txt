@@ -1,0 +1,30 @@
+# ── Web framework ──────────────────────────────────────────────────────────────
+fastapi==0.139.0
+uvicorn[standard]==0.50.2
+python-multipart==0.0.32
+
+# ── ASR ────────────────────────────────────────────────────────────────────────
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+
+# ── PyTorch (CPU-only) — install with:
+#    pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.11.0+cpu
+torchaudio==2.11.0+cpu
+
+# ── VAD ────────────────────────────────────────────────────────────────────────
+# silero-vad 5+ ships its own ONNX Runtime backend — no torch.hub, no extra deps
+silero-vad==6.2.1
+
+# ── Translation ────────────────────────────────────────────────────────────────
+# transformers only for tokenizer; model inference goes through ctranslate2
+transformers==5.13.0
+
+# ── Diarization (installed but kept behind ENABLE_DIARIZATION flag)
+# pyannote.audio requires HuggingFace gated-model approval — install manually
+# after confirming access: pip install pyannote.audio==3.3.2
+
+# ── Tooling ────────────────────────────────────────────────────────────────────
+python-dotenv==1.2.2
+pytest==9.1.1
+soundfile==0.14.0
