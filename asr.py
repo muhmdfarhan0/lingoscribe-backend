@@ -42,8 +42,9 @@ def transcribe(audio_path: str) -> dict:
                 data={
                     "model": "whisper-large-v3",
                     "response_format": "verbose_json",
-                    # Guides Whisper to output Perso-Arabic script for Pakistani languages
-                    "prompt": "یہ اردو یا پاکستانی پنجابی زبان میں گفتگو ہے۔",
+                    # Force Urdu script — covers Urdu + Pakistani Punjabi (Shahmukhi).
+                    # Without this Whisper defaults to Devanagari for South Asian audio.
+                    "language": "ur",
                 },
                 files={"file": (filename, audio_bytes)},
             )
