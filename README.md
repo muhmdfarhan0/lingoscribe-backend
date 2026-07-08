@@ -1,45 +1,54 @@
 # LingoScribe — Backend
 
-Speech intelligence API for Urdu and Punjabi. Accepts audio in any format, strips silence, transcribes with Whisper, translates each segment to English with NLLB-200, and surfaces AI-generated insights via Groq — all on CPU so it runs affordably on free-tier cloud hosting.
+FastAPI backend for Urdu and Punjabi speech intelligence. Receives audio in any format, transcribes via Groq Whisper large-v3, batch-translates segments to English with an LLM, and generates AI insights — all in a lightweight Docker container with no local ML models.
+
+**Live frontend:** https://lingoscribe-frontend.vercel.app  
+**How it works:** https://lingoscribe-frontend.vercel.app/how-it-works.html  
+**Frontend repo:** https://github.com/muhmdfarhan0/lingoscribe-frontend
+
+---
+
+## Architecture
+
+![How LingoScribe Works](how-it-works-diagram.png)
+
+---
+
+## Pipeline
 
 ```
-                    ┌──────────────────────────────────────┐
-                    │          LingoScribe Pipeline         │
-                    └──────────────────────────────────────┘
-                                      │
-                      POST /transcribe  (multipart audio)
-                                      │
-                             ┌────────▼────────┐
-                             │    vad.py        │
-                             │  Silero-VAD      │  strips silence
-                             └────────┬────────┘
-                                      │
-                             ┌────────▼────────┐
-                             │    asr.py        │
-                             │ faster-whisper   │  small / int8 / CPU
-                             └────────┬────────┘
-                                      │  segments + language
-                             ┌────────▼────────┐
-                             │  translate.py    │
-                             │  NLLB-200 / CT2  │  → English
-                             └────────┬────────┘
-                                      │
-                                 JSON response
+POST /transcribe (audio file)
+        │
+        ▼
+  ffmpeg (if format not Groq-native)
+        │
+        ▼
+  Groq Whisper large-v3
+  → segments with timestamps + language detection
+        │
+        ▼
+  Groq GPT-OSS-120B (batch translate all segments in one call)
+  → English translation per segment
+        │
+        ▼
+  JSON response {language, segments[{start, end, text, translation_en}]}
 
-          POST /analyze  ──►  Groq openai/gpt-oss-120b  ──►  insights
-          POST /ask      ──►  Groq openai/gpt-oss-120b  ──►  answer
+POST /analyze  ──►  Groq GPT-OSS-120B  ──►  {summary, key_topics, tone, observation}
+POST /ask      ──►  Groq GPT-OSS-120B  ──►  {answer}
+GET  /health   ──►  {"status": "ok"}
 ```
 
 ## Tech stack
 
-| Layer | Library | Notes |
-|-------|---------|-------|
-| API | FastAPI + uvicorn | async, multipart upload |
-| ASR | faster-whisper (small, int8) | CPU inference, ~15-60s per 30s clip |
-| VAD | silero-vad 6.x | soundfile backend, no torchaudio required |
-| Translation | NLLB-200-distilled-600M via CTranslate2 | one-time offline conversion |
-| Insights & Q&A | Groq `openai/gpt-oss-120b` | via `/analyze` and `/ask` endpoints |
-| Container | python:3.11-slim + ffmpeg | Docker, deployed on Render |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| API | FastAPI + Uvicorn | Async, multipart upload, CORS |
+| Transcription | Groq Whisper large-v3 | Speech-to-text with timestamps |
+| Translation | Groq GPT-OSS-120B | Batch segment translation, one LLM call |
+| Insights & Q&A | Groq GPT-OSS-120B | `/analyze` and `/ask` endpoints |
+| Format conversion | ffmpeg | WMA and other non-Groq-native formats |
+| Container | python:3.11-slim + ffmpeg | No ML models in image — fast builds |
+| Hosting | Render (Docker) | Free tier, env secrets for API key |
 
 ## Quick start
 
@@ -48,40 +57,34 @@ git clone https://github.com/muhmdfarhan0/lingoscribe-backend
 cd lingoscribe-backend
 
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+source venv/bin/activate   # Windows: venv\Scripts\activate
 
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
 
-cp .env.example .env              # fill in GROQ_API_KEY
+cp .env.example .env       # add your GROQ_API_KEY
 
 uvicorn main:app --reload --port 8000
 ```
 
-### One-time NLLB model conversion (enables translation)
-
-```bash
-python scripts/convert_nllb.py
-```
-
-Downloads `facebook/nllb-200-distilled-600M` and converts it to CTranslate2 int8 format (~600 MB). Commit via Git LFS or download at container startup — see `render.yaml` for options.
-
 ## API reference
 
 ### `GET /health`
-Returns `{"status": "ok"}`. Used by Render health checks.
+```json
+{"status": "ok"}
+```
 
 ### `POST /transcribe`
-Upload audio via multipart form.
+Multipart form upload.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `file` | `audio/*` | Any format: WAV, MP3, OGG, FLAC, M4A, WEBM, OPUS, AAC, WMA, MP4 |
+| `file` | audio/* | WAV, MP3, OGG, FLAC, M4A, WEBM, OPUS, AAC, WMA, MP4 |
 
 **Response**
 ```json
 {
   "language": "ur",
-  "language_probability": 0.98,
+  "language_probability": 1.0,
   "diarization_enabled": false,
   "segments": [
     {
@@ -96,30 +99,26 @@ Upload audio via multipart form.
 ```
 
 ### `POST /analyze`
-AI-generated insights for a transcript.
-
 ```json
 // Request
-{ "text": "English transcript text", "language": "ur" }
+{"text": "English transcript", "language": "ur"}
 
 // Response
 {
-  "summary": "2-3 sentence summary",
+  "summary": "2–3 sentence summary",
   "key_topics": ["topic 1", "topic 2"],
   "tone": "conversational",
-  "observation": "Notable speech pattern or context"
+  "observation": "Notable speech pattern"
 }
 ```
 
 ### `POST /ask`
-Ask any question about a transcript.
-
 ```json
 // Request
-{ "transcript": "Full transcript text", "question": "What was discussed?" }
+{"transcript": "Full transcript text", "question": "What was discussed?"}
 
 // Response
-{ "answer": "Direct answer from the transcript." }
+{"answer": "Direct answer from the transcript."}
 ```
 
 ## Docker
@@ -129,39 +128,19 @@ docker build -t lingoscribe-backend .
 docker run -p 8000:8000 -e PORT=8000 -e GROQ_API_KEY=your_key lingoscribe-backend
 ```
 
-## Utility scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/convert_nllb.py` | One-time NLLB model conversion (run locally before deploy) |
-| `scripts/noise_augment.py` | Audio augmentation demo: GSM bandpass, noise, time-stretch |
-| `scripts/finetune_whisper.py` | LoRA fine-tune demo on Urdu Common Voice (proves training loop runs) |
-
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8000` | Port uvicorn binds to (Render sets this automatically) |
+| `PORT` | `8000` | Port uvicorn binds to |
 | `ALLOWED_ORIGIN` | `http://localhost:5500` | CORS origin — set to your Vercel URL |
-| `GROQ_API_KEY` | — | Groq API key for `/analyze` and `/ask` |
-| `NLLB_MODEL_DIR` | `converted_models/nllb-200-distilled-600M` | Path to converted NLLB model |
-| `ENABLE_DIARIZATION` | `false` | Enable speaker diarization (requires HuggingFace gated model access) |
-| `HF_TOKEN` | — | HuggingFace token — required only when `ENABLE_DIARIZATION=true` |
+| `GROQ_API_KEY` | — | Required for all endpoints except `/health` |
+| `ENABLE_DIARIZATION` | `false` | Speaker diarization (requires HF gated model) |
+| `HF_TOKEN` | — | HuggingFace token — only if diarization enabled |
 
-## Known limitations
+## Why Groq instead of self-hosted Whisper
 
-- **CPU-only inference** — transcribing a 30-second clip takes 15-60 s on free-tier hosting. A GPU would be 10-20x faster.
-- **Diarization is off by default** — `pyannote/speaker-diarization-3.1` requires HuggingFace gated-model approval. Set `ENABLE_DIARIZATION=true` and `HF_TOKEN` after approval.
-- **Translation requires model conversion** — run `scripts/convert_nllb.py` once. Without it, the API returns a placeholder instead of crashing.
-- **LoRA fine-tune is a proof of concept** — `scripts/finetune_whisper.py` demonstrates the training loop and loss decrease on a small synthetic dataset, not a production model.
-
-## What would come next
-
-- WebSocket streaming for real-time segment delivery
-- GPU fine-tuning on 10k+ labelled Urdu utterances (Common Voice + synthetic augmentation)
-- Diarization on a paid tier with persistent model volume
-- Language detection override parameter for uncertain cases
-- Response caching by audio hash
+Self-hosted Whisper (small model, 244 MB weights) + PyTorch exceeded Render's free-tier 512 MB RAM limit on every transcription request. The container OOMed, Render returned 503 without CORS headers, and the browser showed "Failed to fetch". Switching to Groq's API dropped the image to under 100 MB, eliminated cold-start model loading, and upgraded transcription quality to Whisper large-v3.
 
 ## Contact
 
