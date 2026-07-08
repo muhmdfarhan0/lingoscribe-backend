@@ -26,6 +26,7 @@ app.add_middleware(
         "null",
         # Vercel preview and production domains
         "https://lingoscribe-frontend.vercel.app",
+        "https://lingoscribe-frontend-muhmdfarhan0.vercel.app",
     ],
     allow_origin_regex=r"https://lingoscribe.*\.vercel\.app",
     allow_methods=["GET", "POST"],
