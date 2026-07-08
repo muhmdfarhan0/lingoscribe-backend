@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: lingoscribe-backend
+    runtime: docker          # use our Dockerfile
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+
+    envVars:
+      - key: PORT
+        value: 10000          # Render free tier uses 10000 by default
+
+      - key: ALLOWED_ORIGIN
+        # Set this to your actual Vercel URL once deployed, then redeploy.
+        value: https://lingoscribe-frontend.vercel.app
+
+      - key: NLLB_MODEL_DIR
+        # Path inside the container where the converted NLLB model lives.
+        # If you chose to download the model at startup instead of baking it
+        # in, point this to the download destination and add a startup script.
+        value: /app/converted_models/nllb-200-distilled-600M
+
+      - key: ENABLE_DIARIZATION
+        value: "false"        # set to "true" only after confirming HF access
+
+      - key: HF_TOKEN
+        sync: false           # mark as secret — enter value in Render dashboard
+                              # only required if ENABLE_DIARIZATION=true
