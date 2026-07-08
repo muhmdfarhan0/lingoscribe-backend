@@ -1,11 +1,9 @@
-import os
-from vad import trim_silence
 from asr import transcribe
 from diarize import diarize, DIARIZATION_ENABLED
-from translate import translate_to_english
+from translate import translate_segments
 
 
-def _assign_speakers(asr_segments: list[dict], diar_segments: list[dict]) -> list[dict]:
+def _assign_speakers(asr_segments: list, diar_segments: list) -> list:
     for seg in asr_segments:
         mid = (seg["start"] + seg["end"]) / 2
         speaker = "SPEAKER_00"
@@ -18,25 +16,17 @@ def _assign_speakers(asr_segments: list[dict], diar_segments: list[dict]) -> lis
 
 
 def process_audio(audio_path: str) -> dict:
-    trimmed_path = trim_silence(audio_path)
-    asr_result = transcribe(trimmed_path)
-
+    asr_result = transcribe(audio_path)
     segments = asr_result["segments"]
 
     if DIARIZATION_ENABLED:
-        diar_segments = diarize(trimmed_path)
-        segments = _assign_speakers(segments, diar_segments)
+        diar_segs = diarize(audio_path)
+        segments = _assign_speakers(segments, diar_segs)
     else:
         for seg in segments:
             seg["speaker"] = None
 
-    for seg in segments:
-        seg["translation_en"] = translate_to_english(
-            seg["text"], asr_result["language"]
-        )
-
-    if trimmed_path != audio_path and os.path.exists(trimmed_path):
-        os.unlink(trimmed_path)
+    segments = translate_segments(segments, asr_result["language"])
 
     return {
         "language": asr_result["language"],

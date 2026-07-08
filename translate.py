@@ -1,44 +1,60 @@
 import os
-from transformers import AutoTokenizer
-import ctranslate2
+import json
+import httpx
 
-MODEL_DIR = os.getenv("NLLB_MODEL_DIR", "converted_models/nllb-200-distilled-600M")
-FLORES_MAP = {
-    "ur": "urd_Arab",
-    "pa": "pan_Guru",
-    "en": "eng_Latn",
-    "hi": "hin_Deva",
-    "ar": "arb_Arab",
+GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+LANG_NAMES = {
+    "ur": "Urdu", "pa": "Punjabi", "hi": "Hindi",
+    "en": "English", "ar": "Arabic", "fa": "Persian",
+    "bn": "Bengali", "sd": "Sindhi", "ps": "Pashto",
 }
-TARGET_LANG = "eng_Latn"
-
-_tokenizer = None
-_translator = None
 
 
-def _load():
-    global _tokenizer, _translator
-    if _tokenizer is None:
-        src = "facebook/nllb-200-distilled-600M"
-        _tokenizer = AutoTokenizer.from_pretrained(src)
-        _translator = ctranslate2.Translator(MODEL_DIR, device="cpu")
+def translate_segments(segments: list, language: str) -> list:
+    if language == "en":
+        for seg in segments:
+            seg["translation_en"] = seg["text"]
+        return segments
 
+    texts = [seg.get("text", "") for seg in segments]
+    if not any(t.strip() for t in texts):
+        for seg in segments:
+            seg["translation_en"] = ""
+        return segments
 
-def translate_to_english(text: str, source_lang: str) -> str:
-    flores_src = FLORES_MAP.get(source_lang, f"{source_lang}_Arab")
-    if flores_src == TARGET_LANG:
-        return text
-    if not os.path.isdir(MODEL_DIR):
-        # Model not yet converted — return a clear placeholder so the
-        # API still works before the user runs scripts/convert_nllb.py.
-        return f"[translation unavailable — run scripts/convert_nllb.py first]"
-    _load()
-    _tokenizer.src_lang = flores_src
-    tokens = _tokenizer.convert_ids_to_tokens(_tokenizer.encode(text))
-    results = _translator.translate_batch(
-        [tokens],
-        target_prefix=[[TARGET_LANG]],
-        max_decoding_length=256,
+    lang_name = LANG_NAMES.get(language, language.upper())
+    prompt = (
+        f"Translate each {lang_name} phrase to English. "
+        "Return ONLY a JSON array of strings — one English translation per input, same order, no explanation.\n\n"
+        f"Input: {json.dumps(texts, ensure_ascii=False)}"
     )
-    translated_tokens = results[0].hypotheses[0][1:]  # strip target lang token
-    return _tokenizer.decode(_tokenizer.convert_tokens_to_ids(translated_tokens))
+
+    try:
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(
+                GROQ_CHAT_URL,
+                headers={"Authorization": f"Bearer {GROQ_KEY}"},
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                    "max_completion_tokens": 1200,
+                },
+            )
+            resp.raise_for_status()
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        if raw.startswith("```"):
+            raw = raw[raw.find("["):]
+        if raw.endswith("```"):
+            raw = raw[:raw.rfind("]") + 1]
+        translations = json.loads(raw)
+        for seg, trans in zip(segments, translations):
+            seg["translation_en"] = str(trans).strip() if trans else ""
+    except Exception:
+        for seg in segments:
+            seg["translation_en"] = "[translation unavailable]"
+
+    return segments

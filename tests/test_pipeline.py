@@ -10,7 +10,6 @@ SAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample.wav")
 
 def test_imports():
     import asr
-    import vad
     import diarize
     import translate
     import pipeline
@@ -25,7 +24,10 @@ def test_health():
     assert resp.json() == {"status": "ok"}
 
 
-@pytest.mark.skipif(not os.path.exists(SAMPLE), reason="sample.wav not found")
+@pytest.mark.skipif(
+    not os.path.exists(SAMPLE) or not os.getenv("GROQ_API_KEY"),
+    reason="sample.wav not found or GROQ_API_KEY not set",
+)
 def test_transcribe_structure():
     from main import app
     client = TestClient(app)
