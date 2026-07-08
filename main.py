@@ -18,10 +18,19 @@ app = FastAPI(title="LingoScribe", version="1.0.0")
 ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:5500")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[ALLOWED_ORIGIN, "http://localhost:5500", "http://127.0.0.1:5500",
-                   "http://localhost:3000", "null"],
+    allow_origins=[
+        ALLOWED_ORIGIN,
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "http://localhost:3000",
+        "null",
+        # Vercel preview and production domains
+        "https://lingoscribe-frontend.vercel.app",
+    ],
+    allow_origin_regex=r"https://lingoscribe.*\.vercel\.app",
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
